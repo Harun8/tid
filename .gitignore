@@ -1,0 +1,16 @@
+.DS_Store
+.build/
+DerivedData/
+*.log
+*.xcuserstate
+*.xcuserstate*
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+**/*.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+**/*.xcodeproj/project.xcworkspace/xcuserdata/
+node_modules/
+dist/
+.env
+.validation/
