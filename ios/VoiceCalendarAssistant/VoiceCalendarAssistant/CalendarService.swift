@@ -4,8 +4,14 @@ import Foundation
 @MainActor
 final class CalendarService {
     private let eventStore = EKEventStore()
+    private var cachedCalendars: [CalendarInfo]?
+    private var cachedCalendarsLoadedAt: Date?
+    private var cachedCalendarsAuthorizationStatus: EKAuthorizationStatus?
+    private static let calendarCacheTTL: TimeInterval = 60
 
     func requestCalendarWriteAccess() async throws {
+        invalidateCalendarCache()
+
         if #available(iOS 17.0, *) {
             let granted: Bool = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
                 eventStore.requestWriteOnlyAccessToEvents { granted, error in
@@ -34,8 +40,21 @@ final class CalendarService {
     }
 
     func createEvent(from draft: CalendarEventDraft) async throws -> String {
-        try await requestCalendarWriteAccess()
-        let validatedDraft = try draft.validatedForCalendar()
+        AppTrace.point(
+            "CalendarService.createEvent.requested",
+            fields: [
+                "alarms_count": "\(draft.alarmsMinutesBefore.count)",
+                "has_recurrence": "\(draft.recurrenceRule != nil)",
+                "title_chars": "\(draft.title.count)"
+            ]
+        )
+
+        try await AppTrace.measure("CalendarService.requestCalendarWriteAccess") {
+            try await requestCalendarWriteAccess()
+        }
+        let validatedDraft = try AppTrace.measure("CalendarService.validateDraft") {
+            try draft.validatedForCalendar()
+        }
 
         let event = EKEvent(eventStore: eventStore)
         event.title = validatedDraft.title
@@ -45,9 +64,13 @@ final class CalendarService {
         event.location = validatedDraft.location
         event.notes = validatedDraft.notesForCalendar
 
-        if let calendarIdentifier = validatedDraft.calendarIdentifier,
-           let selectedCalendar = eventStore.calendar(withIdentifier: calendarIdentifier),
-           selectedCalendar.allowsContentModifications {
+        let selectedCalendar = validatedDraft.calendarIdentifier.flatMap { calendarIdentifier in
+            AppTrace.measure("CalendarService.resolveSelectedCalendar") {
+                eventStore.calendar(withIdentifier: calendarIdentifier)
+            }
+        }
+
+        if let selectedCalendar, selectedCalendar.allowsContentModifications {
             event.calendar = selectedCalendar
         } else if let defaultCalendar = eventStore.defaultCalendarForNewEvents {
             event.calendar = defaultCalendar
@@ -56,6 +79,7 @@ final class CalendarService {
         }
 
         if let existingEvent = existingEvent(matching: validatedDraft, calendar: event.calendar) {
+            AppTrace.point("CalendarService.existingEventMatched")
             return try verifiedEventIdentifier(
                 for: existingEvent,
                 draft: validatedDraft,
@@ -70,7 +94,9 @@ final class CalendarService {
             event.addRecurrenceRule(recurrenceRule)
         }
 
-        try eventStore.save(event, span: .thisEvent, commit: true)
+        try AppTrace.measure("CalendarService.eventStore.save") {
+            try eventStore.save(event, span: .thisEvent, commit: true)
+        }
         return try verifiedEventIdentifier(
             for: event,
             draft: validatedDraft,
@@ -80,17 +106,29 @@ final class CalendarService {
     }
 
     func availableCalendars() async throws -> [CalendarInfo] {
+        if let cachedCalendars = cachedCalendarsIfFresh() {
+            AppTrace.point(
+                "CalendarService.availableCalendars.cacheHit",
+                fields: ["count": "\(cachedCalendars.count)"]
+            )
+            return cachedCalendars
+        }
+
         if #available(iOS 17.0, *) {
             let status = EKEventStore.authorizationStatus(for: .event)
             guard status == .fullAccess || status == .writeOnly else {
                 try await requestCalendarWriteAccess()
-                return defaultCalendarOnly()
+                let calendars = defaultCalendarOnly()
+                cacheCalendars(calendars)
+                return calendars
             }
         } else {
             let status = EKEventStore.authorizationStatus(for: .event)
             guard status == .authorized else {
                 try await requestCalendarWriteAccess()
-                return defaultCalendarOnly()
+                let calendars = defaultCalendarOnly()
+                cacheCalendars(calendars)
+                return calendars
             }
         }
 
@@ -104,7 +142,28 @@ final class CalendarService {
                 )
             }
 
-        return calendars.isEmpty ? defaultCalendarOnly() : calendars
+        let resolvedCalendars = calendars.isEmpty ? defaultCalendarOnly() : calendars
+        cacheCalendars(resolvedCalendars)
+        return resolvedCalendars
+    }
+
+    func availableCalendarsIfAuthorized() async throws -> [CalendarInfo]? {
+        if let cachedCalendars = cachedCalendarsIfFresh() {
+            AppTrace.point(
+                "CalendarService.availableCalendars.authorizedCacheHit",
+                fields: ["count": "\(cachedCalendars.count)"]
+            )
+            return cachedCalendars
+        }
+
+        let status = EKEventStore.authorizationStatus(for: .event)
+        if #available(iOS 17.0, *) {
+            guard status == .fullAccess || status == .writeOnly else { return nil }
+        } else {
+            guard status == .authorized else { return nil }
+        }
+
+        return try await availableCalendars()
     }
 
     private func defaultCalendarOnly() -> [CalendarInfo] {
@@ -116,6 +175,33 @@ final class CalendarService {
                 allowsContentModifications: calendar.allowsContentModifications
             )
         ]
+    }
+
+    private func cachedCalendarsIfFresh(now: Date = Date()) -> [CalendarInfo]? {
+        guard let cachedCalendars,
+              let cachedCalendarsLoadedAt,
+              cachedCalendarsAuthorizationStatus == EKEventStore.authorizationStatus(for: .event),
+              now.timeIntervalSince(cachedCalendarsLoadedAt) < Self.calendarCacheTTL else {
+            return nil
+        }
+
+        return cachedCalendars
+    }
+
+    private func cacheCalendars(_ calendars: [CalendarInfo]) {
+        cachedCalendars = calendars
+        cachedCalendarsLoadedAt = Date()
+        cachedCalendarsAuthorizationStatus = EKEventStore.authorizationStatus(for: .event)
+        AppTrace.point(
+            "CalendarService.availableCalendars.cacheStore",
+            fields: ["count": "\(calendars.count)"]
+        )
+    }
+
+    private func invalidateCalendarCache() {
+        cachedCalendars = nil
+        cachedCalendarsLoadedAt = nil
+        cachedCalendarsAuthorizationStatus = nil
     }
 
     private func existingEvent(matching draft: CalendarEventDraft, calendar: EKCalendar) -> EKEvent? {

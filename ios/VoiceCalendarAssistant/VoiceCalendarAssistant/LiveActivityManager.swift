@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class LiveActivityManager {
     private var activity: Activity<TidRecordingActivityAttributes>?
+    private var lastDeliveredState: TidRecordingActivityAttributes.ContentState?
     private static let staleTransientActivityAge: TimeInterval = 90
 
     func update(
@@ -19,11 +20,24 @@ final class LiveActivityManager {
         await cleanupStaleTransientActivities()
 
         if let currentActivity {
+            if lastDeliveredState == state, alertConfiguration == nil {
+                AppTrace.point(
+                    "live_activity_update_skipped",
+                    fields: [
+                        "reason": "duplicate_state",
+                        "phase": state.phase.rawValue,
+                        "activity_state": Self.activityStateDescription(currentActivity)
+                    ]
+                )
+                return
+            }
+
             await currentActivity.update(
                 ActivityContent(state: state, staleDate: nil),
                 alertConfiguration: alertConfiguration
             )
             activity = currentActivity
+            lastDeliveredState = state
             AppTrace.point(
                 "live_activity_updated",
                 fields: [
@@ -48,6 +62,7 @@ final class LiveActivityManager {
                     content: ActivityContent(state: state, staleDate: nil),
                     pushType: nil
                 )
+                lastDeliveredState = state
                 AppTrace.point(
                     "live_activity_started",
                     fields: [
@@ -105,6 +120,7 @@ final class LiveActivityManager {
         }
         AppTrace.point("live_activity_ended", fields: ["count": "\(activities.count)", "phase": state.phase.rawValue])
         activity = nil
+        lastDeliveredState = nil
     }
 
     func stopRequestID() -> String? {

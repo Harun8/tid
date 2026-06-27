@@ -58,6 +58,7 @@ final class VoiceAssistantViewModel: ObservableObject {
     private var stopToDraftFields: [String: String] = [:]
     private var shouldResetRealtimeClientOnNextStart = false
     private var startListeningGeneration = 0
+    private var coldStartWarmupTask: Task<Void, Never>?
 
     init(
         realtimeClient: RealtimeClient? = nil,
@@ -81,12 +82,17 @@ final class VoiceAssistantViewModel: ObservableObject {
 
     deinit {
         eventsTask?.cancel()
+        coldStartWarmupTask?.cancel()
     }
 
     func startListening(source: ListeningStartSource = .manual) async {
         let traceID = AppTrace.makeID()
         startListeningGeneration += 1
         let generation = startListeningGeneration
+        AppTrace.point(
+            "VoiceAssistantViewModel.startListening.requested",
+            fields: ["source": source.rawValue, "trace_id": traceID]
+        )
 
         await AppTrace.measure("VoiceAssistantViewModel.startListening", fields: ["source": source.rawValue, "trace_id": traceID]) {
             finishStopToDraftTraceIfNeeded(result: "superseded_by_start", extra: ["trace_id": traceID])
@@ -138,6 +144,10 @@ final class VoiceAssistantViewModel: ObservableObject {
                 lastClarificationAlertKey = nil
             }
             status = .connecting
+            AppTrace.point(
+                "VoiceAssistantViewModel.startListening.phaseSet",
+                fields: ["status": status.rawValue, "source": source.rawValue, "trace_id": traceID]
+            )
             await syncLiveActivity()
 
             do {
@@ -145,21 +155,6 @@ final class VoiceAssistantViewModel: ObservableObject {
                     await refreshRealtimeClientIfNeeded()
                 }
                 try ensureCurrentStartGeneration(generation)
-
-                if source.requiresColdStartHardening {
-                    _ = await liveActivityManager.waitForState(.connecting, timeout: 1.2)
-                    try ensureCurrentStartGeneration(generation)
-                    await ensureCalendarsLoadedIfNeeded(traceID: traceID)
-                    try ensureCurrentStartGeneration(generation)
-                    try await AppTrace.measure("BackendPreflightService.warmBackend", fields: ["source": source.rawValue, "trace_id": traceID]) {
-                        try await BackendPreflightService.warmBackend(backendURL: settings.backendURL, traceID: traceID)
-                    }
-                    try ensureCurrentStartGeneration(generation)
-                    try await AppTrace.measure("RealtimeClient.connect.coldStartWarmup", fields: ["source": source.rawValue, "trace_id": traceID]) {
-                        try await realtimeClient.connect()
-                    }
-                    try ensureCurrentStartGeneration(generation)
-                }
 
                 if let clarificationContext {
                     realtimeClient.setPendingConversationContext(clarificationContext)
@@ -176,6 +171,9 @@ final class VoiceAssistantViewModel: ObservableObject {
                     try await realtimeClient.startListening()
                 }
                 try ensureCurrentStartGeneration(generation)
+                if source.requiresColdStartHardening {
+                    scheduleColdStartWarmups(source: source, traceID: traceID, generation: generation)
+                }
             } catch is StartListeningSupersededError {
                 AppTrace.point(
                     "VoiceAssistantViewModel.startListening.superseded",
@@ -218,6 +216,10 @@ final class VoiceAssistantViewModel: ObservableObject {
 
     func stopListening() async {
         let traceID = AppTrace.makeID()
+        AppTrace.point(
+            "VoiceAssistantViewModel.stopListening.requested",
+            fields: ["status": status.rawValue, "trace_id": traceID]
+        )
 
         await AppTrace.measure("VoiceAssistantViewModel.stopListening", fields: ["trace_id": traceID]) {
             if status == .connecting, listeningStartedAt == nil {
@@ -363,7 +365,15 @@ final class VoiceAssistantViewModel: ObservableObject {
 
         do {
             let calendars = try await AppTrace.measure("CalendarService.availableCalendars.preload", fields: ["trace_id": traceID]) {
-                try await calendarService.availableCalendars()
+                try await calendarService.availableCalendarsIfAuthorized()
+            }
+
+            guard let calendars else {
+                AppTrace.point(
+                    "VoiceAssistantViewModel.calendarPreload.skipped",
+                    fields: ["reason": "calendar_permission_not_granted", "trace_id": traceID]
+                )
+                return
             }
             settings.setAvailableCalendars(calendars)
         } catch {
@@ -719,7 +729,12 @@ final class VoiceAssistantViewModel: ObservableObject {
             }
         case .calendarDraft(let newDraft):
             do {
-                var validatedDraft = try newDraft.validatedForCalendar()
+                var validatedDraft = try AppTrace.measure(
+                    "VoiceAssistantViewModel.calendarDraftValidated",
+                    fields: ["trace_id": stopToDraftFields["trace_id"] ?? ""]
+                ) {
+                    try newDraft.validatedForCalendar()
+                }
                 switch routeCalendar(for: validatedDraft) {
                 case .resolved(let routedDraft):
                     validatedDraft = routedDraft
@@ -1265,6 +1280,68 @@ final class VoiceAssistantViewModel: ObservableObject {
         )
     }
 
+    private func scheduleColdStartWarmups(
+        source: ListeningStartSource,
+        traceID: String,
+        generation: Int
+    ) {
+        coldStartWarmupTask?.cancel()
+        coldStartWarmupTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await runColdStartWarmups(source: source, traceID: traceID, generation: generation)
+        }
+    }
+
+    private func runColdStartWarmups(
+        source: ListeningStartSource,
+        traceID: String,
+        generation: Int
+    ) async {
+        await AppTrace.measure(
+            "VoiceAssistantViewModel.coldStartWarmups",
+            fields: ["source": source.rawValue, "trace_id": traceID]
+        ) {
+            guard generation == startListeningGeneration, !Task.isCancelled else {
+                AppTrace.point(
+                    "VoiceAssistantViewModel.coldStartWarmups.skipped",
+                    fields: ["reason": "superseded", "source": source.rawValue, "trace_id": traceID]
+                )
+                return
+            }
+
+            await ensureCalendarsLoadedIfNeeded(traceID: traceID)
+
+            guard generation == startListeningGeneration, !Task.isCancelled else { return }
+            do {
+                try await AppTrace.measure("BackendPreflightService.warmBackend", fields: ["source": source.rawValue, "trace_id": traceID]) {
+                    try await BackendPreflightService.warmBackend(backendURL: settings.backendURL, traceID: traceID)
+                }
+            } catch {
+                AppTrace.point(
+                    "VoiceAssistantViewModel.coldStartWarmups.backend.error",
+                    fields: ["error": error.localizedDescription, "source": source.rawValue, "trace_id": traceID]
+                )
+            }
+
+            guard generation == startListeningGeneration,
+                  !Task.isCancelled,
+                  status == .connecting || status == .listening else {
+                return
+            }
+
+            do {
+                try await AppTrace.measure("RealtimeClient.connect.coldStartWarmup", fields: ["source": source.rawValue, "trace_id": traceID]) {
+                    try await realtimeClient.connect()
+                }
+            } catch {
+                AppTrace.point(
+                    "VoiceAssistantViewModel.coldStartWarmups.realtime.error",
+                    fields: ["error": error.localizedDescription, "source": source.rawValue, "trace_id": traceID]
+                )
+            }
+        }
+    }
+
     private func clarificationConversationContext() -> String? {
         let previousTranscript = finalTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         let question = assistantResponse.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1361,6 +1438,8 @@ final class VoiceAssistantViewModel: ObservableObject {
 
     private func cancelConnectingStart(traceID: String, reason: String) async {
         startListeningGeneration += 1
+        coldStartWarmupTask?.cancel()
+        coldStartWarmupTask = nil
         isAnsweringClarification = false
         listeningStartedAt = nil
         speechDetectedAt = nil
@@ -1508,6 +1587,8 @@ final class VoiceAssistantViewModel: ObservableObject {
             ]
         )
 
+        coldStartWarmupTask?.cancel()
+        coldStartWarmupTask = nil
         eventsTask?.cancel()
         await realtimeClient.disconnect()
 
@@ -1714,16 +1795,59 @@ private extension RealtimeClientEvent {
 
 private struct StartListeningSupersededError: Error {}
 
-private enum BackendPreflightService {
+private actor BackendPreflightService {
+    private static let shared = BackendPreflightService()
     private static let maxAttempts = 3
     private static let timeoutSeconds: TimeInterval = 1.6
     private static let retryDelayNanoseconds: UInt64 = 300_000_000
+    private static let successfulWarmupTTL: TimeInterval = 45
+    private var successfulWarmups: [String: Date] = [:]
+    private var inFlightWarmups: [String: Task<Void, Error>] = [:]
 
     static func warmBackend(backendURL: URL?, traceID: String) async throws {
+        try await shared.warmBackend(backendURL: backendURL, traceID: traceID)
+    }
+
+    private func warmBackend(backendURL: URL?, traceID: String) async throws {
         guard let backendURL else {
             throw RealtimeClientError.backendURLMissing
         }
 
+        let cacheKey = backendURL.absoluteString
+        if let lastSuccess = successfulWarmups[cacheKey],
+           Date().timeIntervalSince(lastSuccess) < Self.successfulWarmupTTL {
+            AppTrace.point(
+                "BackendPreflightService.warmBackend.cacheHit",
+                fields: ["backend": backendURL.host ?? "unknown", "trace_id": traceID]
+            )
+            return
+        }
+
+        if let inFlightWarmup = inFlightWarmups[cacheKey] {
+            AppTrace.point(
+                "BackendPreflightService.warmBackend.coalesced",
+                fields: ["backend": backendURL.host ?? "unknown", "trace_id": traceID]
+            )
+            try await inFlightWarmup.value
+            return
+        }
+
+        let task = Task<Void, Error> {
+            try await Self.performHealthCheck(backendURL: backendURL, traceID: traceID)
+        }
+        inFlightWarmups[cacheKey] = task
+
+        do {
+            try await task.value
+            successfulWarmups[cacheKey] = Date()
+            inFlightWarmups[cacheKey] = nil
+        } catch {
+            inFlightWarmups[cacheKey] = nil
+            throw error
+        }
+    }
+
+    private static func performHealthCheck(backendURL: URL, traceID: String) async throws {
         let healthURL = backendURL.appending(path: "health")
         var lastError: Error?
 

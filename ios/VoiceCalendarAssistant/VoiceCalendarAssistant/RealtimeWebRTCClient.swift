@@ -20,13 +20,16 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
     private var dataChannel: RTCDataChannel?
     private var connectTask: Task<Void, Error>?
     private var audioEngine: AVAudioEngine?
-    private var queuedClientEvents: [Data] = []
+    private var queuedClientEvents: [(data: Data, isAudioFrame: Bool)] = []
     private var connected = false
     private var suppressConnectionCloseEvents = false
     private var listeningBeganAt: Date?
     private var responseRequestedAt: Date?
     private var currentTraceID = AppTrace.makeID()
     private var emittedCalendarDraftArguments: Set<String> = []
+    private var firstAudioFrameQueued = false
+    private var firstAudioFrameSent = false
+    private var firstRealtimeEventReceived = false
     private var pendingConversationContext: String?
     private let clientEventQueue = DispatchQueue(label: "com.tid.VoiceCalendarAssistant.realtimeClientEvents")
     private let clientEventQueueKey = DispatchSpecificKey<Bool>()
@@ -70,6 +73,7 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
 
     func connect() async throws {
         if connected {
+            AppTrace.point("RealtimeWebRTCClient.connect.reused", fields: ["trace_id": currentTraceID])
             continuation.yield(.connected)
             return
         }
@@ -200,6 +204,7 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
             }
 
             connected = true
+            AppTrace.point("RealtimeWebRTCClient.peerConnectionReady", fields: ["trace_id": traceID])
             continuation.yield(.connected)
         }
     }
@@ -212,9 +217,11 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
     func startListening() async throws {
         currentTraceID = AppTrace.makeID()
         let traceID = currentTraceID
+        AppTrace.point("RealtimeWebRTCClient.startRequested", fields: ["trace_id": traceID])
 
         try await AppTrace.measure("RealtimeWebRTCClient.startListening", fields: ["trace_id": traceID]) {
             emittedCalendarDraftArguments.removeAll()
+            resetPerTurnTraceState()
             dropQueuedClientEvents(traceID: traceID)
             var didStartAudioCapture = false
 
@@ -232,6 +239,7 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
                 }
                 didStartAudioCapture = true
                 listeningBeganAt = Date()
+                AppTrace.point("RealtimeWebRTCClient.audioCaptureReady", fields: ["trace_id": traceID])
                 continuation.yield(.listeningStarted)
 
                 if connected {
@@ -266,6 +274,7 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
 
     func stopListening() async throws {
         let traceID = currentTraceID
+        AppTrace.point("RealtimeWebRTCClient.stopRequested", fields: ["trace_id": traceID])
 
         try await AppTrace.measure("RealtimeWebRTCClient.stopListening", fields: ["trace_id": traceID]) {
             try await AppTrace.measure("RealtimeWebRTCClient.waitForMinimumRecordingDuration", fields: ["trace_id": traceID]) {
@@ -289,10 +298,12 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
             try AppTrace.measure("RealtimeWebRTCClient.send.inputAudioBufferCommit", fields: ["trace_id": traceID]) {
                 try sendClientEvent(["type": "input_audio_buffer.commit"])
             }
+            AppTrace.point("RealtimeWebRTCClient.audioBufferCommitted", fields: ["trace_id": traceID])
             responseRequestedAt = Date()
             try AppTrace.measure("RealtimeWebRTCClient.send.responseCreate", fields: ["trace_id": traceID]) {
                 try sendClientEvent(["type": "response.create"])
             }
+            AppTrace.point("RealtimeWebRTCClient.responseCreateSent", fields: ["trace_id": traceID])
             listeningBeganAt = nil
         }
     }
@@ -370,6 +381,15 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
         }
     }
 
+    private func resetPerTurnTraceState() {
+        firstRealtimeEventReceived = false
+        responseRequestedAt = nil
+        clientEventQueue.sync {
+            firstAudioFrameQueued = false
+            firstAudioFrameSent = false
+        }
+    }
+
     func createRealtimeCallAnswer(forSDPOffer sdpOffer: String, traceID: String? = nil) async throws -> String {
         let traceID = traceID ?? currentTraceID
 
@@ -441,6 +461,7 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
             return
         }
 
+        traceFirstRealtimeEventIfNeeded(type)
         traceServerEvent(type)
 
         switch type {
@@ -488,6 +509,21 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
         }
 
         AppTrace.point("RealtimeWebRTCClient.serverEvent", fields: fields)
+    }
+
+    private func traceFirstRealtimeEventIfNeeded(_ type: String) {
+        guard !firstRealtimeEventReceived else { return }
+
+        firstRealtimeEventReceived = true
+        var fields = [
+            "event": type,
+            "trace_id": currentTraceID
+        ]
+        if let elapsed = AppTrace.elapsedMilliseconds(since: responseRequestedAt) {
+            fields["since_response_create_ms"] = elapsed
+        }
+
+        AppTrace.point("RealtimeWebRTCClient.firstRealtimeEventReceived", fields: fields)
     }
 
     private static func shouldTraceServerEvent(_ type: String) -> Bool {
@@ -759,11 +795,11 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
                 return
             }
 
-            self.continuation.yield(.inputAudioLevel(Self.normalizedAudioLevel(from: buffer)))
-            self.enqueueClientEvent([
-                "type": "input_audio_buffer.append",
-                "audio": audio
-            ])
+            self.enqueueAudioFrame(
+                audio,
+                level: Self.normalizedAudioLevel(from: buffer),
+                traceID: traceID
+            )
         }
 
         engine.prepare()
@@ -878,7 +914,7 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
         let data = try JSONSerialization.data(withJSONObject: object)
 
         try performOnClientEventQueue {
-            try sendClientEventDataOnQueue(data)
+            try sendClientEventDataOnQueue(data, isAudioFrame: false)
         }
     }
 
@@ -888,7 +924,29 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
 
             do {
                 let data = try JSONSerialization.data(withJSONObject: object)
-                try self.sendClientEventDataOnQueue(data)
+                try self.sendClientEventDataOnQueue(data, isAudioFrame: false)
+            } catch {
+                self.continuation.yield(.error(error.localizedDescription))
+            }
+        }
+    }
+
+    private func enqueueAudioFrame(_ audio: String, level: Double, traceID: String) {
+        continuation.yield(.inputAudioLevel(level))
+        clientEventQueue.async { [weak self] in
+            guard let self else { return }
+
+            if !self.firstAudioFrameQueued {
+                self.firstAudioFrameQueued = true
+                AppTrace.point("RealtimeWebRTCClient.firstAudioFrameQueued", fields: ["trace_id": traceID])
+            }
+
+            do {
+                let data = try JSONSerialization.data(withJSONObject: [
+                    "type": "input_audio_buffer.append",
+                    "audio": audio
+                ])
+                try self.sendClientEventDataOnQueue(data, isAudioFrame: true)
             } catch {
                 self.continuation.yield(.error(error.localizedDescription))
             }
@@ -903,20 +961,23 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
         return try clientEventQueue.sync(execute: operation)
     }
 
-    private func sendClientEventDataOnQueue(_ data: Data) throws {
+    private func sendClientEventDataOnQueue(_ data: Data, isAudioFrame: Bool) throws {
         guard let dataChannel else {
-            queuedClientEvents.append(data)
+            queuedClientEvents.append((data: data, isAudioFrame: isAudioFrame))
             return
         }
 
         guard dataChannel.readyState == .open else {
-            queuedClientEvents.append(data)
+            queuedClientEvents.append((data: data, isAudioFrame: isAudioFrame))
             return
         }
 
         let buffer = RTCDataBuffer(data: data, isBinary: false)
         if !dataChannel.sendData(buffer) {
             throw RealtimeClientError.dataChannelUnavailable
+        }
+        if isAudioFrame {
+            traceFirstAudioFrameSentOnQueue()
         }
     }
 
@@ -959,9 +1020,19 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
         let queuedEvents = queuedClientEvents
         queuedClientEvents.removeAll()
 
-        for data in queuedEvents {
-            _ = dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
+        for event in queuedEvents {
+            if dataChannel.sendData(RTCDataBuffer(data: event.data, isBinary: false)),
+               event.isAudioFrame {
+                traceFirstAudioFrameSentOnQueue()
+            }
         }
+    }
+
+    private func traceFirstAudioFrameSentOnQueue() {
+        guard !firstAudioFrameSent else { return }
+
+        firstAudioFrameSent = true
+        AppTrace.point("RealtimeWebRTCClient.firstAudioFrameSent", fields: ["trace_id": currentTraceID])
     }
 
     private func closeRealtimeConnection(suppressEvents: Bool, traceID: String) {
@@ -1004,14 +1075,32 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
         }
 
         emittedCalendarDraftArguments.insert(arguments)
+        AppTrace.point(
+            "RealtimeWebRTCClient.toolCallReceived",
+            fields: [
+                "arguments_chars": "\(arguments.count)",
+                "source": source,
+                "trace_id": currentTraceID
+            ]
+        )
 
         guard let argumentsData = arguments.data(using: .utf8) else {
             return
         }
 
         do {
-            let payload = try JSONDecoder().decode(CalendarEventToolPayload.self, from: argumentsData)
-            let draft = try payload.makeDraft(defaultCalendarIdentifier: defaultCalendarIdentifier)
+            let payload = try AppTrace.measure(
+                "RealtimeWebRTCClient.calendarDraftDecode",
+                fields: ["source": source, "trace_id": currentTraceID]
+            ) {
+                try JSONDecoder().decode(CalendarEventToolPayload.self, from: argumentsData)
+            }
+            let draft = try AppTrace.measure(
+                "RealtimeWebRTCClient.calendarDraftValidated",
+                fields: ["source": source, "trace_id": currentTraceID]
+            ) {
+                try payload.makeDraft(defaultCalendarIdentifier: defaultCalendarIdentifier)
+            }
             continuation.yield(.calendarDraft(draft))
         } catch {
             continuation.yield(.error(error.localizedDescription))

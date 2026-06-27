@@ -125,6 +125,14 @@ app.post(
           locale: headerValue(req.get("X-Tid-Locale"))
         });
       });
+      tracePoint(traceID, "realtime.session.config", {
+        model: session.model,
+        output_modalities: session.output_modalities.join(","),
+        transcription_model: session.audio.input.transcription.model,
+        turn_detection: session.audio.input.turn_detection === null ? "manual" : "server",
+        tool_count: session.tools.length,
+        max_output_tokens: session.max_output_tokens
+      });
 
       const form = new FormData();
       form.set("sdp", sdp);
