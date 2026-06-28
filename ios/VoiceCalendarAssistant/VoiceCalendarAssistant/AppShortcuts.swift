@@ -14,10 +14,12 @@ struct StartCalendarAssistantIntent: AudioRecordingIntent, LiveActivityIntent {
     static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
     static var isDiscoverable = true
 
+    #if compiler(>=6.2)
     @available(iOS 26.0, *)
     static var supportedModes: IntentModes {
         [.background, .foreground(.dynamic)]
     }
+    #endif
 
     func perform() async throws -> some IntentResult {
         let preparedStopRequestID = await ActionButtonLiveActivityStopTransition.prepareIfRecording()

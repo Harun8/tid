@@ -114,10 +114,12 @@ struct AnswerClarificationFromLiveActivityIntent: AudioRecordingIntent, LiveActi
     static var openAppWhenRun = false
     static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
+    #if compiler(>=6.2)
     @available(iOS 26.0, *)
     static var supportedModes: IntentModes {
         [.background, .foreground(.dynamic)]
     }
+    #endif
 
     @MainActor
     func perform() async throws -> some IntentResult {
