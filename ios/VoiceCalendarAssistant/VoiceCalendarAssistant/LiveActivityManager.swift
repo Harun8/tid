@@ -166,8 +166,12 @@ final class LiveActivityManager {
         guard !isStaleTransient(activity) else { return false }
 
         switch activity.activityState {
-        case .active, .stale, .pending:
+        case .active, .stale:
             return true
+        #if compiler(>=6.2)
+        case .pending:
+            return true
+        #endif
         case .ended, .dismissed:
             return false
         @unknown default:
@@ -222,8 +226,10 @@ final class LiveActivityManager {
             return "active"
         case .stale:
             return "stale"
+        #if compiler(>=6.2)
         case .pending:
             return "pending"
+        #endif
         case .ended:
             return "ended"
         case .dismissed:

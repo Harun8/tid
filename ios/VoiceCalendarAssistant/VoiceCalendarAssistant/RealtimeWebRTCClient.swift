@@ -648,25 +648,33 @@ final class RealtimeWebRTCClient: NSObject, RealtimeClient {
         didInitializeWebRTC = true
     }
 
+    private static var bluetoothCategoryOption: AVAudioSession.CategoryOptions {
+        #if compiler(>=6.2)
+        return .allowBluetoothHFP
+        #else
+        return .allowBluetooth
+        #endif
+    }
+
     private func configureAudioSession(traceID: String) throws {
         let session = AVAudioSession.sharedInstance()
         let configurations: [(name: String, apply: () throws -> Void)] = [
             (
                 name: "record.measurement.mix",
                 apply: {
-                    try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP, .mixWithOthers])
+                    try session.setCategory(.record, mode: .measurement, options: [Self.bluetoothCategoryOption, .mixWithOthers])
                 }
             ),
             (
                 name: "playAndRecord.measurement.mix",
                 apply: {
-                    try session.setCategory(.playAndRecord, mode: .measurement, options: [.allowBluetoothHFP, .defaultToSpeaker, .mixWithOthers])
+                    try session.setCategory(.playAndRecord, mode: .measurement, options: [Self.bluetoothCategoryOption, .defaultToSpeaker, .mixWithOthers])
                 }
             ),
             (
                 name: "record.measurement",
                 apply: {
-                    try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+                    try session.setCategory(.record, mode: .measurement, options: [Self.bluetoothCategoryOption])
                 }
             )
         ]
