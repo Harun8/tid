@@ -1,0 +1,103 @@
+name: Tid Validation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      dynamic_island:
+        description: "Run the simulator Dynamic Island harness"
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: tid-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  calendar-intelligence:
+    name: Calendar intelligence
+    runs-on: macos-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcode-select -p
+          xcrun simctl list runtimes available
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Validate calendar intelligence
+        env:
+          TID_VALIDATION_ARTIFACTS_DIR: ${{ runner.temp }}/calendar-intelligence
+          TID_XCODE_SIM_DESTINATION: generic/platform=iOS Simulator
+        run: scripts/validate-calendar-intelligence.sh
+
+      - name: Upload calendar validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calendar-intelligence-validation
+          path: ${{ runner.temp }}/calendar-intelligence
+          if-no-files-found: warn
+
+  dynamic-island:
+    name: Dynamic Island harness
+    runs-on: macos-latest
+    timeout-minutes: 45
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.dynamic_island }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcode-select -p
+          xcrun simctl list devices available
+
+      - name: Boot iPhone simulator
+        run: |
+          SIMULATOR_ID="$(xcrun simctl list devices booted | awk -F'[()]' '/iPhone/ {print $2; exit}')"
+          if [[ -z "$SIMULATOR_ID" ]]; then
+            SIMULATOR_ID="$(xcrun simctl list devices available | awk -F'[()]' '/iPhone/ && /Shutdown/ {print $2; exit}')"
+          fi
+          if [[ -z "$SIMULATOR_ID" ]]; then
+            echo "No available iPhone simulator found." >&2
+            exit 1
+          fi
+          xcrun simctl boot "$SIMULATOR_ID" || true
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          echo "TID_SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
+
+      - name: Validate Dynamic Island states
+        env:
+          TID_VALIDATION_ARTIFACTS_DIR: ${{ runner.temp }}/dynamic-island
+          TID_REQUIRE_EXPANDED: 0
+        run: scripts/validate-dynamic-island.sh
+
+      - name: Upload Dynamic Island artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamic-island-validation
+          path: ${{ runner.temp }}/dynamic-island
+          if-no-files-found: warn

@@ -44,7 +44,13 @@ To validate the calendar-intelligence contract after prompt/schema/calendar chan
 scripts/validate-calendar-intelligence.sh
 ```
 
-This checks backend prompt/schema support for Danish phrases, attendees, location, recurrence, and reminders, then compiles the backend and iOS app.
+This checks backend prompt/schema support for Danish phrases, attendees, location, recurrence, reminders, calendar routing, optional clarification behavior, and the command regression matrix, then compiles the backend and iOS app.
+
+To run only the command matrix:
+
+```sh
+node scripts/validate-regression-matrix.mjs .validation/regression-matrix.md
+```
 
 To also build/install on the physical iPhone and launch the debug ready-to-save Live Activity:
 
@@ -55,6 +61,12 @@ scripts/validate-dynamic-island.sh --device-smoke
 Keep the iPhone unlocked and awake for `--device-smoke`; `devicectl` cannot launch the app on a locked phone.
 
 The harness cannot physically press the Action Button. Use it to catch visual and Live Activity state regressions, then run the manual tests below for the real Action Button/App Intent/microphone path.
+
+## GitHub Actions
+
+The `Tid Validation` workflow runs `scripts/validate-calendar-intelligence.sh` on pushes to `main` and pull requests. This covers the backend prompt/schema contract, command regression matrix, backend build, and iOS build.
+
+The same workflow has a manual `dynamic_island` option. Enable it from `workflow_dispatch` when you want CI to boot a simulator and run `scripts/validate-dynamic-island.sh`. Expanded screenshots may be skipped in CI if the simulator window is not available, but compact screenshots and trace assertions still run.
 
 ## Required Passes
 

@@ -132,6 +132,10 @@ assert_contains "$ROOT_DIR/ios/VoiceCalendarAssistant/VoiceCalendarAssistant/Voi
 assert_contains "$ROOT_DIR/ios/VoiceCalendarAssistant/VoiceCalendarAssistant/VoiceAssistantViewModel.swift" "\"hvem\"" "people clarification treated optional"
 assert_contains "$ROOT_DIR/ios/VoiceCalendarAssistant/VoiceCalendarAssistant/VoiceAssistantViewModel.swift" "\"gentagelse\"" "recurrence clarification treated optional"
 
+log "Regression command matrix"
+run_logged regression-matrix \
+  node "$ROOT_DIR/scripts/validate-regression-matrix.mjs" "$ARTIFACTS_DIR/regression-matrix.md"
+
 log "Backend build"
 run_logged backend-build npm --prefix "$SERVER_DIR" run build
 
@@ -158,10 +162,13 @@ cat >"$INDEX_PATH" <<EOF
 - Smarter reminders: vague Danish reminder phrases are mapped instead of clarified.
 - Recurring events are represented as \`recurrenceRule\` and saved to EventKit from both app and Live Activity.
 - Locations and people are preserved in the calendar event; people are stored in notes because EventKit does not support reliable invitee creation from this flow.
+- The regression matrix covers 30+ Danish command shapes for reminders, recurrence, attendees, locations, calendar routing, missing details, and high-confidence auto-save.
 
 ## Logs
 
 - Static checks: \`logs/static-checks.log\`
+- Regression matrix: \`logs/regression-matrix.log\`
+- Regression matrix summary: \`regression-matrix.md\`
 - Backend build: \`logs/backend-build.log\`
 - iOS build: \`logs/xcodebuild-simulator.log\`
 EOF

@@ -1,0 +1,396 @@
+{
+  "version": 1,
+  "description": "Regression matrix for Danish voice commands Tid must understand reliably.",
+  "cases": [
+    {
+      "id": "basic-meeting-person-reminder",
+      "utterance": "Jeg har et mode med Per i morgen fra 12 til 13, og jeg skal have en pamindelse 2 minutter for.",
+      "expected": {
+        "title": "Mode med Per",
+        "attendees": ["Per"],
+        "remindersMinutes": [2],
+        "calendarStrategy": "default",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "default-meeting-title-no-reminder",
+      "utterance": "Jeg har et mode i morgen fra 12 til 13.",
+      "expected": {
+        "title": "Mode",
+        "remindersMinutes": [],
+        "calendarStrategy": "default",
+        "autoSaveEligible": true,
+        "reviewReason": null,
+        "defaultTitle": true
+      }
+    },
+    {
+      "id": "training-personal-category",
+      "utterance": "Jeg skal traene i morgen fra klokken 8 til 10.",
+      "expected": {
+        "title": "Traening",
+        "remindersMinutes": [],
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "doctor-location-vague-reminder",
+      "utterance": "Jeg skal til laegen pa Rigshospitalet i morgen klokken 15 og vil have en pamindelse lidt for.",
+      "expected": {
+        "title": "Laegetid",
+        "location": "Rigshospitalet",
+        "remindersMinutes": [10],
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "coffee-recurrence-location",
+      "utterance": "Jeg har kaffemode med Jonas pa Cafe Paludan hver anden tirsdag klokken 14 de naeste 5 gange, og jeg vil have en pamindelse lidt for.",
+      "expected": {
+        "title": "Kaffemode med Jonas",
+        "attendees": ["Jonas"],
+        "location": "Cafe Paludan",
+        "remindersMinutes": [10],
+        "recurrence": {
+          "frequency": "weekly",
+          "interval": 2,
+          "occurrenceCount": 5
+        },
+        "calendarStrategy": "default",
+        "autoSaveEligible": false,
+        "reviewReason": "recurrence"
+      }
+    },
+    {
+      "id": "explicit-work-calendar",
+      "utterance": "Laeg budgetmode med Anna i arbejdskalenderen i morgen fra 9 til 10.",
+      "expected": {
+        "title": "Budgetmode med Anna",
+        "attendees": ["Anna"],
+        "remindersMinutes": [],
+        "calendarStrategy": "explicit_name",
+        "calendarName": "Arbejde",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "explicit-training-calendar",
+      "utterance": "Laeg traening i Traening kalenderen pa lordag klokken 8.",
+      "expected": {
+        "title": "Traening",
+        "calendarStrategy": "explicit_name",
+        "calendarName": "Traening",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "explicit-knowledge-calendar",
+      "utterance": "Saet en laesesession i Viden kalenderen pa onsdag klokken 20.",
+      "expected": {
+        "title": "Laesesession",
+        "calendarStrategy": "explicit_name",
+        "calendarName": "Viden",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "family-category-dinner",
+      "utterance": "Familiemiddag hos mor pa sondag klokken 18.",
+      "expected": {
+        "title": "Familiemiddag",
+        "location": "hos mor",
+        "calendarStrategy": "category",
+        "calendarCategory": "family",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "family-pickup",
+      "utterance": "Hent Alma i bornehaven i morgen klokken 15:30.",
+      "expected": {
+        "title": "Hent Alma",
+        "location": "bornehaven",
+        "calendarStrategy": "category",
+        "calendarCategory": "family",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "missing-start-time",
+      "utterance": "Jeg har et mode med Per i morgen.",
+      "expected": {
+        "clarification": "start_time",
+        "autoSaveEligible": false,
+        "reviewReason": "missing_required_field"
+      }
+    },
+    {
+      "id": "missing-date",
+      "utterance": "Jeg har et mode med Per klokken 12.",
+      "expected": {
+        "clarification": "date",
+        "autoSaveEligible": false,
+        "reviewReason": "missing_required_field"
+      }
+    },
+    {
+      "id": "multiple-events-one-command",
+      "utterance": "Jeg har et mode klokken 12 og traening klokken 18 i morgen.",
+      "expected": {
+        "clarification": "multiple_events",
+        "autoSaveEligible": false,
+        "reviewReason": "multiple_events"
+      }
+    },
+    {
+      "id": "impossible-date",
+      "utterance": "Saet et mode den 32. januar klokken 10.",
+      "expected": {
+        "clarification": "impossible_date",
+        "autoSaveEligible": false,
+        "reviewReason": "date_risk"
+      }
+    },
+    {
+      "id": "first-monday-long-duration",
+      "utterance": "Jeg har et mode den forste mandag i august fra klokken 12 og 10 timer frem, med en pamindelse fa minutter for.",
+      "expected": {
+        "title": "Mode",
+        "durationMinutes": 600,
+        "remindersMinutes": [5],
+        "calendarStrategy": "default",
+        "autoSaveEligible": false,
+        "reviewReason": "date_risk"
+      }
+    },
+    {
+      "id": "tuesday-two-weeks",
+      "utterance": "Jeg har et mode tirsdag om to uger klokken 14.",
+      "expected": {
+        "title": "Mode",
+        "remindersMinutes": [],
+        "calendarStrategy": "default",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "weekly-training-until-date",
+      "utterance": "Jeg skal traene hver mandag klokken 8 indtil 1. september.",
+      "expected": {
+        "title": "Traening",
+        "recurrence": {
+          "frequency": "weekly",
+          "interval": 1,
+          "endDate": "1. september"
+        },
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": false,
+        "reviewReason": "recurrence"
+      }
+    },
+    {
+      "id": "daily-medication",
+      "utterance": "Husk medicin hver dag klokken 7 med pamindelse lige for.",
+      "expected": {
+        "title": "Medicin",
+        "remindersMinutes": [5],
+        "recurrence": {
+          "frequency": "daily",
+          "interval": 1
+        },
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": false,
+        "reviewReason": "recurrence"
+      }
+    },
+    {
+      "id": "plural-attendees-location",
+      "utterance": "Mode med Per og Anna pa kontoret i morgen klokken 10.",
+      "expected": {
+        "title": "Mode med Per og Anna",
+        "attendees": ["Per", "Anna"],
+        "location": "kontoret",
+        "calendarStrategy": "category",
+        "calendarCategory": "work",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "lunch-attendee-location",
+      "utterance": "Frokost med Sara pa kontoret i morgen klokken 12.",
+      "expected": {
+        "title": "Frokost med Sara",
+        "attendees": ["Sara"],
+        "location": "kontoret",
+        "calendarStrategy": "category",
+        "calendarCategory": "work",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "subject-plus-person-title",
+      "utterance": "Status med Lise pa mandag fra 13 til 13:30.",
+      "expected": {
+        "title": "Status med Lise",
+        "attendees": ["Lise"],
+        "calendarStrategy": "category",
+        "calendarCategory": "work",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "generic-role-not-attendee",
+      "utterance": "Jeg har mode med kunden i morgen fra 15 til 16.",
+      "expected": {
+        "title": "Mode",
+        "attendees": [],
+        "calendarStrategy": "category",
+        "calendarCategory": "work",
+        "autoSaveEligible": true,
+        "reviewReason": null,
+        "genericRoleExcluded": true
+      }
+    },
+    {
+      "id": "two-reminders",
+      "utterance": "Mode med Peter i morgen klokken 9, og giv mig en pamindelse dagen for og 10 minutter for.",
+      "expected": {
+        "title": "Mode med Peter",
+        "attendees": ["Peter"],
+        "remindersMinutes": [1440, 10],
+        "calendarStrategy": "default",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "short-before-reminder",
+      "utterance": "Ring til banken i morgen klokken 11, mind mig kort for.",
+      "expected": {
+        "title": "Ring til banken",
+        "remindersMinutes": [5],
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "good-time-reminder",
+      "utterance": "Forbered workshop pa fredag klokken 9 med pamindelse i god tid.",
+      "expected": {
+        "title": "Forbered workshop",
+        "remindersMinutes": [30],
+        "calendarStrategy": "category",
+        "calendarCategory": "work",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "explicit-family-calendar",
+      "utterance": "Laeg aftensmad pa familiekalenderen i morgen klokken 18.",
+      "expected": {
+        "title": "Aftensmad",
+        "remindersMinutes": [],
+        "calendarStrategy": "explicit_name",
+        "calendarName": "Familie",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "explicit-private-calendar",
+      "utterance": "Laeg tandlaege i privat kalenderen pa torsdag klokken 8.",
+      "expected": {
+        "title": "Tandlaege",
+        "remindersMinutes": [],
+        "calendarStrategy": "explicit_name",
+        "calendarName": "Privat",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "unmatched-explicit-calendar",
+      "utterance": "Laeg mode i Arkiv kalenderen i morgen klokken 12.",
+      "expected": {
+        "calendarStrategy": "explicit_name",
+        "calendarName": "Arkiv",
+        "clarification": "calendar_name_unmatched",
+        "autoSaveEligible": false,
+        "reviewReason": "calendar_name_unmatched"
+      }
+    },
+    {
+      "id": "low-confidence-review",
+      "utterance": "Saet den der aftale med noget omkring tirsdag formiddag.",
+      "expected": {
+        "clarification": "start_time",
+        "autoSaveEligible": false,
+        "reviewReason": "low_confidence"
+      }
+    },
+    {
+      "id": "same-morning-reminder",
+      "utterance": "Fly til London pa fredag klokken 14, mind mig samme morgen.",
+      "expected": {
+        "title": "Fly til London",
+        "remindersMinutes": [180],
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "monthly-recurrence",
+      "utterance": "Betal husleje den forste hver maned klokken 9.",
+      "expected": {
+        "title": "Betal husleje",
+        "recurrence": {
+          "frequency": "monthly",
+          "interval": 1
+        },
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": false,
+        "reviewReason": "recurrence"
+      }
+    },
+    {
+      "id": "yearly-recurrence",
+      "utterance": "Mors fodselsdag hvert ar den 3. maj.",
+      "expected": {
+        "title": "Mors fodselsdag",
+        "recurrence": {
+          "frequency": "yearly",
+          "interval": 1
+        },
+        "calendarStrategy": "category",
+        "calendarCategory": "family",
+        "autoSaveEligible": false,
+        "reviewReason": "recurrence"
+      }
+    }
+  ]
+}
