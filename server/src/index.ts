@@ -8,6 +8,7 @@ app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
 
 const port = parsePort(process.env.PORT);
+const host = clean(process.env.HOST) ?? "0.0.0.0";
 const openAIRealtimeCallsURL = "https://api.openai.com/v1/realtime/calls";
 const openAIClientSecretsURL = "https://api.openai.com/v1/realtime/client_secrets";
 const requestTimeoutMS = parsePositiveInteger(process.env.OPENAI_REQUEST_TIMEOUT_MS, 15_000, 1_000, 60_000);
@@ -243,8 +244,8 @@ app.post("/realtime/client-secret", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Tid Realtime backend listening on http://localhost:${port}`);
+app.listen(port, host, () => {
+  console.log(`Tid Realtime backend listening on http://${host}:${port}`);
 });
 
 function buildRealtimeSession(overrides: SessionOverrides = {}) {
@@ -294,12 +295,15 @@ function systemInstructions(locale: string, timeZone: string) {
     "Hvis dato eller starttidspunkt mangler helt, skal du stille præcis et kort opklarende spørgsmål på dansk.",
     "Hvis brugeren ikke angiver varighed eller sluttidspunkt, skal du bruge 60 minutter.",
     "Hvis brugeren beder om en påmindelse et par, få eller nogle minutter før, skal du bruge 5 minutter.",
-    "Påmindelsesregler: 'lige før' eller 'kort før' betyder 5 minutter; 'lidt før' betyder 10 minutter; 'i god tid' betyder 30 minutter; 'en halv time før' betyder 30 minutter; 'dagen før' betyder 1440 minutter; 'samme morgen' betyder 180 minutter, medmindre brugeren siger et præcist tidspunkt.",
+    "Påmindelsesregler: 'lige før' eller 'kort før' betyder 5 minutter; 'lidt før' betyder 10 minutter; 'i god tid' betyder 30 minutter; 'en halv time før' betyder 30 minutter; 'en time før' betyder 60 minutter; 'dagen før' betyder 1440 minutter; 'samme morgen' betyder 180 minutter, medmindre brugeren siger et præcist tidspunkt.",
     "Hvis brugeren beder om flere påmindelser, skal alle medtages og deduplikeres, fx 'dagen før og 10 minutter før' -> [1440, 10].",
     "Hvis brugeren ikke beder om påmindelser, skal alarmsMinutesBefore være en tom liste.",
     "Relative datoer skal beregnes direkte, ikke bekræftes. Eksempler: i morgen, på tirsdag, tirsdag om to uger, første mandag i august.",
-    "Naturlige danske perioder skal tolkes pragmatisk: morgen/formiddag er typisk før 12, eftermiddag 12-17, aften 17-22. Hvis brugeren også giver et konkret klokkeslæt, har klokkeslættet forrang.",
-    "Gentagelser skal udfyldes som recurrenceRule, når brugeren siger fx 'hver mandag', 'hver uge', 'hver anden tirsdag', 'dagligt', 'hver måned' eller 'årligt'. Startdatoen skal være første forekomst i brugerens tidszone.",
+    "Naturlige danske perioder skal tolkes pragmatisk: om morgenen eller formiddag uden klokkeslæt betyder start kl. 09:00, eftermiddag betyder start kl. 14:00, og aften betyder start kl. 19:00. Hvis brugeren også giver et konkret klokkeslæt, har klokkeslættet forrang.",
+    "Brug ikke 'i morgen' alene som tidsperiode; det er kun datoen i morgen og kræver stadig et starttidspunkt eller en tidsperiode som formiddag.",
+    "Hvis brugeren siger en periode uden klokkeslæt, fx 'i morgen formiddag' eller 'i eftermiddag', skal du stadig kalde stage_calendar_event, men bruge lavere confidence end 0.90, fordi tidspunktet er produktets standardgæt.",
+    "Forstå danske klokkeslæt som 'halv otte' = 07:30 eller 19:30 afhængigt af kontekst, 'kvart over ni' = 09:15, og 'kvart i fem' = 16:45. Brug omkringliggende ord som morgen, eftermiddag, aften eller start/sluttidspunkt til at vælge AM/PM.",
+    "Gentagelser skal udfyldes som recurrenceRule, når brugeren siger fx 'hver mandag', 'hver uge', 'hver anden tirsdag', 'hver tredje uge', 'dagligt', 'hver måned' eller 'årligt'. Startdatoen skal være første forekomst i brugerens tidszone.",
     "Hvis brugeren siger 'de næste 5 gange', brug recurrenceRule.occurrenceCount = 5. Hvis brugeren siger 'indtil 1. september', brug recurrenceRule.endISO8601.",
     "Hvis brugeren siger en relativ dato og et starttidspunkt, skal du kalde stage_calendar_event. Spørg ikke 'mener du datoen?' eller lignende.",
     "Når alle påkrævede kalenderfelter er kendte, skal du kalde stage_calendar_event med ISO 8601-tider.",

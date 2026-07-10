@@ -1,6 +1,6 @@
 # Tid Action Button Regression Checklist
 
-Run these on the physical iPhone, outside the app, with the backend running on the Mac at `http://192.168.0.121:3000`.
+Run these on the physical iPhone, outside the app, with the backend running on the Mac at `http://Harun.local:3000`.
 
 ## Automated Dynamic Island Harness
 

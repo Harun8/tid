@@ -345,9 +345,55 @@
       "id": "low-confidence-review",
       "utterance": "Saet den der aftale med noget omkring tirsdag formiddag.",
       "expected": {
-        "clarification": "start_time",
+        "title": "Aftale",
+        "startTime": "09:00",
+        "timePeriodDefault": true,
+        "calendarStrategy": "default",
         "autoSaveEligible": false,
         "reviewReason": "low_confidence"
+      }
+    },
+    {
+      "id": "morning-period-default-review",
+      "utterance": "Ring til banken i morgen formiddag.",
+      "expected": {
+        "title": "Ring til banken",
+        "startTime": "09:00",
+        "durationMinutes": 60,
+        "remindersMinutes": [],
+        "timePeriodDefault": true,
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": false,
+        "reviewReason": "date_risk"
+      }
+    },
+    {
+      "id": "afternoon-period-default-review",
+      "utterance": "Ring til kommunen i eftermiddag.",
+      "expected": {
+        "title": "Ring til kommunen",
+        "startTime": "14:00",
+        "durationMinutes": 60,
+        "remindersMinutes": [],
+        "timePeriodDefault": true,
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": false,
+        "reviewReason": "date_risk"
+      }
+    },
+    {
+      "id": "exact-evening-time-auto-save",
+      "utterance": "Middag med Sofie i aften klokken 19.",
+      "expected": {
+        "title": "Middag med Sofie",
+        "attendees": ["Sofie"],
+        "startTime": "19:00",
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": true,
+        "reviewReason": null
       }
     },
     {
@@ -370,6 +416,51 @@
         "recurrence": {
           "frequency": "monthly",
           "interval": 1
+        },
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": false,
+        "reviewReason": "recurrence"
+      }
+    },
+    {
+      "id": "half-hour-danish-time",
+      "utterance": "Traening i Fitness World pa torsdag fra 18 til halv otte.",
+      "expected": {
+        "title": "Traening",
+        "location": "Fitness World",
+        "startTime": "18:00",
+        "endTime": "19:30",
+        "danishClockPhrase": true,
+        "calendarStrategy": "category",
+        "calendarCategory": "personal",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "quarter-past-danish-time",
+      "utterance": "Mode med Nadia pa tirsdag kvart over ni.",
+      "expected": {
+        "title": "Mode med Nadia",
+        "attendees": ["Nadia"],
+        "startTime": "09:15",
+        "durationMinutes": 60,
+        "danishClockPhrase": true,
+        "calendarStrategy": "default",
+        "autoSaveEligible": true,
+        "reviewReason": null
+      }
+    },
+    {
+      "id": "every-third-week-recurrence",
+      "utterance": "Fysioterapi hver tredje uge pa onsdag klokken 16 med pamindelse en time for.",
+      "expected": {
+        "title": "Fysioterapi",
+        "remindersMinutes": [60],
+        "recurrence": {
+          "frequency": "weekly",
+          "interval": 3
         },
         "calendarStrategy": "category",
         "calendarCategory": "personal",

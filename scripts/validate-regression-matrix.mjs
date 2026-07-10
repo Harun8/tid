@@ -44,6 +44,9 @@ const counts = {
   noReminders: count((c) => Array.isArray(c.expected.remindersMinutes) && c.expected.remindersMinutes.length === 0),
   location: count((c) => Boolean(c.expected.location)),
   recurrence: count((c) => Boolean(c.expected.recurrence)),
+  approximatePeriod: count((c) => c.expected.timePeriodDefault === true),
+  danishClockPhrase: count((c) => c.expected.danishClockPhrase === true),
+  recurrenceInterval: count((c) => (c.expected.recurrence?.interval ?? 0) >= 3),
   explicitCalendar: count((c) => c.expected.calendarStrategy === "explicit_name"),
   categoryCalendar: count((c) => c.expected.calendarStrategy === "category"),
   defaultCalendar: count((c) => c.expected.calendarStrategy === "default"),
@@ -63,6 +66,9 @@ const thresholds = {
   noReminders: 4,
   location: 5,
   recurrence: 5,
+  approximatePeriod: 2,
+  danishClockPhrase: 2,
+  recurrenceInterval: 1,
   explicitCalendar: 5,
   categoryCalendar: 10,
   defaultCalendar: 5,
@@ -98,12 +104,22 @@ const codeContracts = [
   {
     label: "Reminder defaults and vague reminders",
     file: "backend",
-    tokens: ["Pamindelsesregler", "samme morgen", "dagen for"]
+    tokens: ["Pamindelsesregler", "samme morgen", "dagen for", "en time for"]
+  },
+  {
+    label: "Approximate time periods",
+    file: "backend",
+    tokens: ["formiddag uden klokkeslaet betyder start kl. 09:00", "Brug ikke 'i morgen' alene", "lavere confidence end 0.90"]
+  },
+  {
+    label: "Danish clock phrases",
+    file: "backend",
+    tokens: ["halv otte", "kvart over ni", "kvart i fem"]
   },
   {
     label: "Recurring events",
     file: "backend",
-    tokens: ["Gentagelser skal udfyldes som recurrenceRule", "hver anden tirsdag", "monthly", "yearly"]
+    tokens: ["Gentagelser skal udfyldes som recurrenceRule", "hver anden tirsdag", "hver tredje uge", "monthly", "yearly"]
   },
   {
     label: "Explicit calendar names",
@@ -128,7 +144,7 @@ const codeContracts = [
   {
     label: "Auto-save confidence gate",
     file: "viewModel",
-    tokens: ["draftReviewReason", "low_confidence", "date_risk", "recurrence"]
+    tokens: ["draftReviewReason", "low_confidence", "date_risk", "recurrence", "approximatePeriodWithoutExplicitTime"]
   },
   {
     label: "Calendar routing decision",
@@ -239,6 +255,9 @@ function renderSummary() {
     const behavior = [
       expected.title ? `title: ${expected.title}` : null,
       expected.clarification ? `clarification: ${expected.clarification}` : null,
+      expected.startTime ? `start: ${expected.startTime}` : null,
+      expected.endTime ? `end: ${expected.endTime}` : null,
+      expected.durationMinutes ? `duration: ${expected.durationMinutes}m` : null,
       expected.calendarStrategy ? `calendar: ${expected.calendarStrategy}` : null,
       expected.calendarName ? `name: ${expected.calendarName}` : null,
       expected.calendarCategory ? `category: ${expected.calendarCategory}` : null,

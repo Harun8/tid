@@ -4,7 +4,7 @@ Goal: add 10-20 realistic calendar events using only the Action Button and Dynam
 
 ## Before Testing
 
-- Backend should return config at `http://192.168.0.121:3000/config`.
+- Backend should return config at `http://Harun.local:3000/config`.
 - Use the Action Button outside the app.
 - Stop recording with the Action Button when you are done speaking.
 - Save from the Dynamic Island when the save UI appears.

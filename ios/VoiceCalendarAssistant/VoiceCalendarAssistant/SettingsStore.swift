@@ -80,7 +80,7 @@ final class SettingsStore: ObservableObject {
     }
 
     private let defaults: UserDefaults
-    private static let developmentBackendURLString = "http://192.168.0.121:3000"
+    private static let developmentBackendURLString = "http://Harun.local:3000"
     private static let defaultRealtimeModel = "gpt-realtime-mini"
     private static let previousRealtimeModelDefault = "gpt-realtime-2"
 

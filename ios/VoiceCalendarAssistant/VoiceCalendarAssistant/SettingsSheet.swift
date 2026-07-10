@@ -374,6 +374,7 @@ private struct SetupStatusSnapshot {
 
     private static func isLocalNetworkHost(_ host: String) -> Bool {
         host == "localhost"
+            || host.hasSuffix(".local")
             || host.hasPrefix("127.")
             || host.hasPrefix("192.168.")
             || host.hasPrefix("10.")

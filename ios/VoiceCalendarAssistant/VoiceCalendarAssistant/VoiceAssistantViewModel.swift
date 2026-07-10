@@ -1058,7 +1058,42 @@ final class VoiceAssistantViewModel: ObservableObject {
             "anden sondag"
         ]
 
-        return riskyPatterns.contains { utterance.contains($0) }
+        if riskyPatterns.contains(where: { utterance.contains($0) }) {
+            return true
+        }
+
+        return Self.approximatePeriodWithoutExplicitTime(utterance)
+    }
+
+    private static func approximatePeriodWithoutExplicitTime(_ utterance: String) -> Bool {
+        let periodPatterns = [
+            "formiddag",
+            "eftermiddag",
+            "i aften",
+            "senere i dag",
+            "over middag"
+        ]
+
+        guard periodPatterns.contains(where: { utterance.contains($0) }) else {
+            return false
+        }
+
+        return !containsExplicitClockTime(utterance)
+    }
+
+    private static func containsExplicitClockTime(_ utterance: String) -> Bool {
+        let clockPatterns = [
+            #"\bkl\.?\s*\d{1,2}([:.]\d{2})?\b"#,
+            #"\bklokken\s*\d{1,2}([:.]\d{2})?\b"#,
+            #"\bfra\s*\d{1,2}([:.]\d{2})?\s*(til|-)\s*\d{1,2}([:.]\d{2})?\b"#,
+            #"\b\d{1,2}([:.]\d{2})?\s*(til|-)\s*\d{1,2}([:.]\d{2})?\b"#,
+            #"\bhalv\s+(et|to|tre|fire|fem|seks|syv|otte|ni|ti|elleve|tolv|\d{1,2})\b"#,
+            #"\bkvart\s+(over|i)\s+(et|to|tre|fire|fem|seks|syv|otte|ni|ti|elleve|tolv|\d{1,2})\b"#
+        ]
+
+        return clockPatterns.contains { pattern in
+            utterance.range(of: pattern, options: .regularExpression) != nil
+        }
     }
 
     private func syncLiveActivity() async {
